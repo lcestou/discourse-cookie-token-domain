@@ -1,11 +1,19 @@
-# name: discourse-cookie-token-domain
-# about: add a cookie token to allow authentication for cross domain
-# version: 0.1
-# authors: mpgn
+# frozen_string_literal: true
 
-enabled_site_setting :cookie_ui_enabled
+# name: discourse-cookie-token-domain
+# about: Add a cookie token to allow authentication for cross domain
+# version: 0.2
+# authors: mpgn, lcestou
+# url: https://github.com/lcestou/discourse-cookie-token-domain
+
+enabled_site_setting :cookie_token_domain_enabled
 
 after_initialize do
-  load File.expand_path("../current_user_provider.rb", __FILE__)
-  Discourse.current_user_provider = ExCurrentUserProvider
+  module ::DiscourseCookieTokenDomain
+    PLUGIN_NAME = "discourse-cookie-token-domain"
+  end
+
+  require_relative "lib/discourse_cookie_token_domain/ex_current_user_provider"
+
+  Discourse.current_user_provider = DiscourseCookieTokenDomain::ExCurrentUserProvider
 end

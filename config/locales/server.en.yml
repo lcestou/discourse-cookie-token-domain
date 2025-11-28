@@ -1,4 +1,4 @@
 en:
   site_settings:
-    cookie_ui_enabled: 'Activate Cookie-token plugin ?'
-    cookie_ui_key: 'Enter the secret key 16 char length min'
+    cookie_token_domain_enabled: "Enable cross-domain cookie token authentication"
+    cookie_token_domain_key: "Secret key for HMAC signing (minimum 16 characters)"

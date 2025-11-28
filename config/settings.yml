@@ -1,7 +1,8 @@
 plugins:
-  cookie_ui_enabled:
-    default: true
+  cookie_token_domain_enabled:
+    default: false
     client: true
-  cookie_ui_key:
-    default: key_very_random
+  cookie_token_domain_key:
+    default: ""
     client: false
+    secret: true
