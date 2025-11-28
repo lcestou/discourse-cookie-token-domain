@@ -1,105 +1,197 @@
-discourse-cookie-token-domain
-=======================
+# discourse-cookie-token-domain
 
-A Discourse plugin to add an additional cookie token at the second-level domain, for site/s wanting to do cross-site credential management.
+A Discourse plugin to add an additional cookie token at the second-level domain, for sites wanting to do cross-site credential management.
 
-This essentially allows an install at forums.example.com to create a cookie token valid at *.example.com
+This essentially allows an install at `forums.example.com` to create a cookie token valid at `*.example.com`.
 
-The cookie contains basic information about a user and a hmac
+## Requirements
 
+- Discourse 3.0+
+- Ruby 3.2+
 
-Cookie content is encode in base64. After decode64 you will have :
-```
+## Installation
+
+Follow the [Install a Plugin](https://meta.discourse.org/t/install-a-plugin/19157) guide, using `https://github.com/lcestou/discourse-cookie-token-domain` as the repository URL.
+
+## Configuration
+
+After installation, go to **Admin → Settings → Plugins** and configure:
+
+1. **cookie_token_domain_enabled**: Enable/disable the plugin
+2. **cookie_token_domain_key**: Set a secret key (minimum 16 characters) for HMAC signing
+
+> ⚠️ **Security Note**: The default is disabled and requires you to set a strong secret key before enabling.
+
+## How It Works
+
+When a user logs in, the plugin creates a cookie named `logged_in` containing:
+
+```json
 {
-    "username":"CapitaineJohn",
-    "user_id":2,"avatar":"/user_avatar/forum.example.com/bonclay/{size}/117_1.png",
-    "group":"[VIP]",
-    "sha256_d": "lROIoUjQVMv1vMThVCMbhS1YehFE4S3aMVKN9Rg2Z7M=",
-    "hmac":"e40575e0f828bcf91b5e30c174dfa4399c72a5acbb32b2a483f8fce42798b1ac"
+  "username": "CapitaineJohn",
+  "user_id": 2,
+  "avatar": "/user_avatar/forum.example.com/bonclay/{size}/117_1.png",
+  "group": "[VIP]",
+  "hmac": "e40575e0f828bcf91b5e30c174dfa4399c72a5acbb32b2a483f8fce42798b1ac"
 }
 ```
 
-The hmac is set with the secret key set in the admin panel
+The cookie value is Base64 encoded and includes an HMAC signature for verification.
 
-![plugin settings](https://i.gyazo.com/8e428c62a48bdfecfc36718807281e10.png)
+## Verifying the Cookie
 
----
+### Algorithm
 
-### Check if user is logged ?
+1. Get the `logged_in` cookie
+2. URL decode the cookie value
+3. Base64 decode the result
+4. Parse as JSON
+5. Extract the user data (without `hmac`)
+6. Compute SHA256 of the JSON payload
+7. Compute HMAC-SHA256 using your secret key
+8. Compare with the `hmac` field in the cookie
 
-In your webiste at location www.domain.com or *.domain.com follow this step :
-
-* get the cookie `logged_in`
-* urldecode the cookie
-* decode the cookie in base64 : `logged_in`
-* urldecode the cookie
-* set a sha256 of the data
-* compare the sha256 to check if user is connected :
-
-```
-if hmac === hmac(sha256, key, data):
-    print 'user if logged'
-else:
-    print 'user not logged'
-```
-
-#### Example in PHP
+### PHP Example
 
 ```php
+<?php
 $cookie = urldecode($_COOKIE["logged_in"]);
 $cookie = base64_decode($cookie);
-$cookie = urldecode($cookie);
 
 $user_infos = json_decode($cookie);
 
-$array_hash = array(
+$array_hash = [
     'username' => $user_infos->username,
     'user_id' => $user_infos->user_id,
     'avatar' => $user_infos->avatar,
     'group' => $user_infos->group
-);
+];
 
 $hash_test = hash('sha256', json_encode($array_hash, JSON_UNESCAPED_SLASHES));
+$computed_hmac = hash_hmac('sha256', $hash_test, 'YOUR_SECRET_KEY');
 
-$test = hash_hmac('sha256',$hash_test,'QALS3FtxwKNj39tb');
-
-if ($test !== $user_infos->hmac) {
-    return 'user not logged';
+if (hash_equals($computed_hmac, $user_infos->hmac)) {
+    echo 'User is logged in';
+} else {
+    echo 'User is not logged in';
 }
 ```
 
-#### Example in Node.js
+### Node.js Example
+
 ```javascript
 const crypto = require('crypto');
 
-// Get the value of the `logged_in` cookie from where ever makes sense
-// in your application. The browser should send it to your backend.
-// For this example, it is hard-coded.
-const valueOfLoggedInCookie =
-  'eyJ1c2VybmFtZSI6ImhvbGxvd3ZlcnNlIiwidXNlcl9pZCI6MSwiYXZhdGFyIjoiL3VzZXJfYXZhdGFyL2Rpc2N1c3MuaG9sbG93dmVyc2UuY29tL2hvbGxvd3ZlcnNlL3tzaXplfS8zXzIucG5nIiwiZ3JvdXAiOm51bGwsImhtYWMiOiI5Njk1ZDdhNDk2ZTBiMTMwZWY1OTI2YjI1NjMyMWUzYjI0YjM5ZWJkNjZjODk3ZTdiNjc0YWVhNjRiZDkyZTdkIn0%3D';
+// Get the cookie value from your request
+const valueOfLoggedInCookie = req.cookies.logged_in;
 
 const uriDecodedPayload = decodeURIComponent(valueOfLoggedInCookie);
 const base64DecodedBuffer = Buffer.from(uriDecodedPayload, 'base64');
 const preJsonPayload = JSON.parse(base64DecodedBuffer.toString());
+
 const jsonPayload = {
   username: preJsonPayload.username,
   user_id: preJsonPayload.user_id,
   avatar: preJsonPayload.avatar,
   group: preJsonPayload.group,
 };
+
 const payloadSha = crypto
   .createHash('sha256')
   .update(JSON.stringify(jsonPayload))
   .digest('hex');
 
 const signed = crypto
-  .createHmac('sha256', 'QALS3FtxwKNj39tb')
+  .createHmac('sha256', 'YOUR_SECRET_KEY')
   .update(payloadSha)
   .digest('hex');
 
-if (signed === preJsonPayload.hmac) {
+if (crypto.timingSafeEqual(Buffer.from(signed), Buffer.from(preJsonPayload.hmac))) {
   console.log('User is logged in');
 } else {
   console.log('User is not logged in');
 }
 ```
+
+### SvelteKit Example
+
+```typescript
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
+import type { Cookies } from '@sveltejs/kit';
+
+interface DiscourseUser {
+  username: string;
+  user_id: number;
+  avatar: string;
+  group: string | null;
+  hmac: string;
+}
+
+export function verifyDiscourseUser(cookies: Cookies, secretKey: string): DiscourseUser | null {
+  const cookieValue = cookies.get('logged_in');
+  if (!cookieValue) return null;
+
+  try {
+    const decoded = Buffer.from(decodeURIComponent(cookieValue), 'base64').toString();
+    const payload: DiscourseUser = JSON.parse(decoded);
+
+    const dataToSign = {
+      username: payload.username,
+      user_id: payload.user_id,
+      avatar: payload.avatar,
+      group: payload.group,
+    };
+
+    const payloadSha = createHash('sha256')
+      .update(JSON.stringify(dataToSign))
+      .digest('hex');
+
+    const computedHmac = createHmac('sha256', secretKey)
+      .update(payloadSha)
+      .digest('hex');
+
+    const isValid = timingSafeEqual(
+      Buffer.from(computedHmac),
+      Buffer.from(payload.hmac)
+    );
+
+    return isValid ? payload : null;
+  } catch {
+    return null;
+  }
+}
+```
+
+## Security Considerations
+
+- Always use HTTPS in production
+- Use a strong, random secret key (32+ characters recommended)
+- The cookie is set with `httponly: false` (intentionally - for client-side JS reading), `secure` (in production), and `same_site: lax`
+- Use timing-safe comparison functions when verifying the HMAC
+- **Why `httponly: false`?** This cookie is designed to be read by JavaScript on subdomains. It contains only public user info (username, avatar, group) plus an HMAC signature. No session tokens or sensitive data.
+
+## Changelog
+
+### v0.2
+- Updated for Discourse 3.x compatibility
+- Added `frozen_string_literal` pragma
+- Modernized file structure with proper namespacing
+- Renamed settings to follow plugin naming conventions
+- Added `secure` and `same_site` cookie attributes
+- **Changed `httponly` to `false`** - enables client-side JavaScript reading on subdomains
+- Changed default to disabled for security
+- Marked secret key setting as `secret: true`
+- Improved cookie deletion on logout
+- Added check for plugin enabled state before setting cookie
+
+### v0.1
+- Initial release by mpgn
+
+## License
+
+MIT
+
+## Credits
+
+- Original plugin by [mpgn](https://github.com/mpgn)
+- Updated by [lcestou](https://github.com/lcestou)
